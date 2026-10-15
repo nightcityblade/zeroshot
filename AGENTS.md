@@ -488,6 +488,8 @@ with `npm i -g @the-open-engine-company/zeroshot` or build `zeroshot` with Cargo
   and services. Provider session homes and scratch directories remain separate; individual process
   cleanup uses session group markers so it cannot terminate a peer or a startup service. Workspace
   roots are run-owner `0700`, runtime roots supervisor-owned `0711`, and production ledgers `0600`.
+  Execution scratch directories use private short `/tmp/zs-*` paths on Unix and are removed only
+  after confirmed process cleanup.
   Session homes disappear only after confirmed cleanup; node-instance homes survive loop revisits.
 - An optional top-level run `environment` carries public setup/startup scripts, nonsecret variables,
   and explicit hook connection references. Profiles and runtime plans have no environment field.

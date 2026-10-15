@@ -69,6 +69,7 @@ fn boundary_contract_execution_files_expose_utf8_scratch_and_return_to_idle_afte
         runner: LocalProcessRunner::new(),
         workspace: fixture.candidate.clone(),
         scratch: PathBuf::from(std::ffi::OsString::from_vec(vec![0xff])),
+        scratch_directory: PrivateDirectory::retained(fixture.runtime.join("invalid-scratch")),
         home: Arc::new(PrivateDirectory::retained(
             fixture.runtime.join("invalid-home"),
         )),
@@ -78,6 +79,22 @@ fn boundary_contract_execution_files_expose_utf8_scratch_and_return_to_idle_afte
         invalid.scratch_text(),
         Err(ProcessRunnerError::InvalidCommand(detail)) if detail.contains("not valid UTF-8")
     ));
+}
+
+#[test]
+fn execution_scratch_uses_a_short_unix_path_and_is_removed_on_drop() {
+    let fixture = Fixture::new();
+    let files = fixture.prepare(1);
+    let scratch = files.scratch.clone();
+    let scratch_text = files.scratch_text().assert_value();
+    assert!(scratch_text.starts_with("/tmp/zs-"));
+    let socket_dir = scratch.join("x".repeat(64));
+    fs::create_dir(&socket_dir).assert_value();
+    let _listener =
+        std::os::unix::net::UnixListener::bind(socket_dir.join("socket")).assert_value();
+    assert!(scratch.is_dir());
+    drop(files);
+    assert!(!scratch.exists());
 }
 
 #[test]

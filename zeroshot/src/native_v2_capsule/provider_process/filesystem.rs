@@ -142,6 +142,7 @@ pub(crate) struct ProviderExecutionFiles {
     pub(crate) runner: LocalProcessRunner,
     pub(crate) workspace: PathBuf,
     scratch: PathBuf,
+    scratch_directory: PrivateDirectory,
     home: Arc<PrivateDirectory>,
     root: PrivateDirectory,
 }
@@ -156,15 +157,16 @@ impl ProviderExecutionFiles {
     fn prepare_io(specification: ExecutionFilesystemSpec) -> io::Result<Self> {
         check_cancelled(&specification.cancellation)?;
         let root = PrivateDirectory::create(specification.root.clone())?;
-        let scratch = root.path.join("tmp");
-        create_private_directory(&scratch)?;
-        set_owner(&scratch, specification.identity)?;
+        let scratch_directory = create_scratch(&root.path)?;
+        set_owner(scratch_directory.path(), specification.identity)?;
+        let scratch = scratch_directory.path.clone();
         let workspace = specification.candidate;
         set_owner(&root.path, specification.identity)?;
         Ok(Self {
             runner: specification.runner,
             workspace,
             scratch,
+            scratch_directory,
             home: specification.home,
             root,
         })
@@ -184,11 +186,17 @@ impl ProviderExecutionFiles {
 
     pub(crate) fn begin_process(&self) {
         self.root.processes.fetch_add(1, Ordering::AcqRel);
+        self.scratch_directory
+            .processes
+            .fetch_add(1, Ordering::AcqRel);
         self.home.processes.fetch_add(1, Ordering::AcqRel);
     }
 
     pub(crate) fn process_reaped(&self) {
         self.root.processes.fetch_sub(1, Ordering::AcqRel);
+        self.scratch_directory
+            .processes
+            .fetch_sub(1, Ordering::AcqRel);
         self.home.processes.fetch_sub(1, Ordering::AcqRel);
     }
 
@@ -200,6 +208,20 @@ impl ProviderExecutionFiles {
         }
         Ok(())
     }
+}
+
+#[cfg(unix)]
+fn create_scratch(_: &Path) -> io::Result<PrivateDirectory> {
+    let path = tempfile::Builder::new()
+        .prefix("zs-")
+        .tempdir_in("/tmp")?
+        .keep();
+    Ok(PrivateDirectory::retained(path))
+}
+
+#[cfg(windows)]
+fn create_scratch(root: &Path) -> io::Result<PrivateDirectory> {
+    PrivateDirectory::create(root.join("tmp"))
 }
 
 fn create_private_directory(path: &Path) -> io::Result<()> {
@@ -639,5 +661,5 @@ fn copy_workspace_symlink(
     }
 }
 
-#[cfg(all(test, target_os = "linux"))]
+#[cfg(all(test, unix))]
 mod tests;
